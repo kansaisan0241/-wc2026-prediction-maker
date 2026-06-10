@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 38% 97%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 209 92% 34%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 22% 91%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 211 24% 92%;
+  --muted-foreground: 215 16% 43%;
+  --accent: 44 68% 51%;
+  --accent-foreground: 222 47% 11%;
+  --border: 214 24% 85%;
+  --input: 214 24% 84%;
+  --ring: 209 92% 34%;
+}
+
+.dark {
+  --background: 219 39% 8%;
+  --foreground: 210 40% 96%;
+  --card: 220 35% 12%;
+  --card-foreground: 210 40% 96%;
+  --popover: 220 35% 12%;
+  --popover-foreground: 210 40% 96%;
+  --primary: 207 92% 48%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 218 28% 18%;
+  --secondary-foreground: 210 40% 96%;
+  --muted: 218 28% 18%;
+  --muted-foreground: 215 20% 71%;
+  --accent: 44 72% 55%;
+  --accent-foreground: 222 47% 11%;
+  --border: 218 25% 23%;
+  --input: 218 25% 25%;
+  --ring: 207 92% 48%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(7, 87, 166, 0.16), transparent 32rem),
+    linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
+  color: hsl(var(--foreground));
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.flag {
+  border-radius: 9999px;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+@media (display-mode: standalone) {
+  body {
+    user-select: none;
+  }
+}

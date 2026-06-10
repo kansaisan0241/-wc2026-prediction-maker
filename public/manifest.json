@@ -1,0 +1,17 @@
+{
+  "name": "2026 FIFA WORLD CUP 予想メーカー",
+  "short_name": "WC2026予想",
+  "description": "グループ順位と決勝トーナメントを予想しよう",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0757A6",
+  "theme_color": "#0757A6",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
