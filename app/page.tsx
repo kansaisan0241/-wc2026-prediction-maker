@@ -215,7 +215,7 @@ function GroupCard({
               if (from >= 0 && to >= 0 && from !== to) onMove(group, from, to);
               dragId.current = null;
             }}
-            className="flex touch-none items-center gap-3 rounded-lg border border-border bg-background p-3 shadow-sm"
+            className="flex touch-pan-y items-center gap-3 rounded-lg border border-border bg-background p-3 shadow-sm"
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fifa text-sm font-black text-white">
               {index + 1}
