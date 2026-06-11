@@ -55,6 +55,4 @@ export type PredictionState = {
   groupRankings: GroupRankings;
   thirdSelections: Record<string, GroupId | "">;
   winners: Record<string, "left" | "right" | "">;
-  mvp: string;
-  topScorer: string;
 };

@@ -1,6 +1,5 @@
 "use client";
 
-import { toPng } from "html-to-image";
 import {
   ChevronDown,
   ChevronUp,
@@ -8,22 +7,18 @@ import {
   Moon,
   Play,
   RotateCcw,
-  Save,
   Share2,
   Sun,
   Trophy,
-  Upload
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { allMatches, createInitialPrediction, getFlagUrl, groupIds, thirdSlots } from "@/lib/data";
-import { createShareUrl, readPredictionFromUrl, STORAGE_KEY } from "@/lib/storage";
+import { createShareUrl, readPredictionFromUrl } from "@/lib/storage";
 import type { GroupId, Match, PredictionState, RoundId, Seed, Team } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 
 const roundLabels: Record<RoundId, string> = {
   r32: "ラウンド32",
@@ -55,6 +50,108 @@ function resolveSeed(seed: Seed, state: PredictionState, matchesByRound: Record<
   const choice = state.winners[match.id];
   if (!choice) return null;
   return resolveSeed(match[choice], state, matchesByRound);
+}
+
+function resolveLoser(match: Match, state: PredictionState, matchesByRound: Record<RoundId, Match[]>): Team | null {
+  const winner = state.winners[match.id];
+  if (!winner) return null;
+  return resolveSeed(match[winner === "left" ? "right" : "left"], state, matchesByRound);
+}
+
+function getFinalResults(state: PredictionState, matchesByRound: Record<RoundId, Match[]>) {
+  const finalMatch = matchesByRound.final[0];
+  const thirdPlaceSide = state.winners["third-place"];
+  const finalWinner = state.winners[finalMatch.id];
+  const champion = finalWinner ? resolveSeed(finalMatch[finalWinner], state, matchesByRound) : null;
+  const runnerUp = finalWinner ? resolveSeed(finalMatch[finalWinner === "left" ? "right" : "left"], state, matchesByRound) : null;
+  const semiLosers = [resolveLoser(matchesByRound.sf[0], state, matchesByRound), resolveLoser(matchesByRound.sf[1], state, matchesByRound)];
+  const third = thirdPlaceSide ? semiLosers[thirdPlaceSide === "left" ? 0 : 1] : null;
+  const fourth = thirdPlaceSide ? semiLosers[thirdPlaceSide === "left" ? 1 : 0] : null;
+
+  return { champion, runnerUp, third, fourth, semiLosers };
+}
+
+function getJapanResult(state: PredictionState, matchesByRound: Record<RoundId, Match[]>) {
+  const japan = Object.values(state.groupRankings).flat().find((team) => team.flagCode === "jp");
+  if (!japan) return "日本: 未定";
+  const sameTeam = (team: Team | null) => team?.id === japan.id;
+  const results = getFinalResults(state, matchesByRound);
+  if (sameTeam(results.champion)) return "日本: 優勝";
+  if (sameTeam(results.runnerUp)) return "日本: 準優勝";
+  if (sameTeam(results.third)) return "日本: 3位";
+  if (sameTeam(results.fourth)) return "日本: 4位";
+  if (results.semiLosers.some(sameTeam)) return "日本: ベスト4";
+
+  const qfLosers = matchesByRound.qf.map((match) => resolveLoser(match, state, matchesByRound));
+  if (qfLosers.some(sameTeam)) return "日本: ベスト8";
+
+  const r16Losers = matchesByRound.r16.map((match) => resolveLoser(match, state, matchesByRound));
+  if (r16Losers.some(sameTeam)) return "日本: ベスト16";
+
+  const r32Losers = matchesByRound.r32.map((match) => resolveLoser(match, state, matchesByRound));
+  if (r32Losers.some(sameTeam)) return "日本: ベスト32";
+
+  const isRound32Team = matchesByRound.r32.some((match) => sameTeam(resolveSeed(match.left, state, matchesByRound)) || sameTeam(resolveSeed(match.right, state, matchesByRound)));
+  return isRound32Team ? "日本: ベスト32" : "日本: グループ敗退";
+}
+
+function drawBracketPng(state: PredictionState, matchesByRound: Record<RoundId, Match[]>) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 900;
+  canvas.height = 560;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  const text = "#111111";
+  const muted = "#777777";
+  const blue = "#0757a6";
+  const gold = "#f3b21a";
+  const results = getFinalResults(state, matchesByRound);
+  const now = new Date();
+  const timestamp = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.textBaseline = "middle";
+
+  const fitText = (value: string, maxWidth: number) => {
+    if (ctx.measureText(value).width <= maxWidth) return value;
+    let next = value;
+    while (next.length > 1 && ctx.measureText(`${next}...`).width > maxWidth) {
+      next = next.slice(0, -1);
+    }
+    return `${next}...`;
+  };
+
+  const drawText = (value: string, x: number, y: number, align: CanvasTextAlign = "left", size = 24, color = text, maxWidth = 220, weight = 700) => {
+    ctx.font = `${weight} ${size}px 'Noto Sans JP', 'Yu Gothic UI', Meiryo, sans-serif`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.fillText(fitText(value, maxWidth), x, y);
+  };
+
+  const drawResultBox = (rank: string, team: Team | null, y: number, accent = false) => {
+    ctx.fillStyle = accent ? "#fff7df" : "#ffffff";
+    ctx.strokeStyle = accent ? gold : "#dddddd";
+    ctx.lineWidth = accent ? 3 : 2;
+    ctx.beginPath();
+    ctx.roundRect(210, y - 38, 480, 76, 14);
+    ctx.fill();
+    ctx.stroke();
+    drawText(rank, 250, y, "left", 24, accent ? "#a96f00" : muted, 100);
+    drawText(team?.name ?? "未定", 490, y, "center", 32, text, 250);
+  };
+
+  drawText("2026 FIFA WORLD CUP", 450, 58, "center", 20, blue, 360);
+  drawText("予想結果", 450, 102, "center", 36, text, 360);
+  drawResultBox("1位", results.champion, 180, true);
+  drawResultBox("2位", results.runnerUp, 270);
+  drawResultBox("3位", results.third, 360);
+  drawResultBox("4位", results.fourth, 450);
+  drawText(getJapanResult(state, matchesByRound), 450, 510, "center", 24, blue, 360);
+  drawText(`出力日時: ${timestamp}`, 870, 535, "right", 13, muted, 260, 500);
+
+  return canvas.toDataURL("image/png");
 }
 
 function TeamPill({ team, muted }: { team: Team | null; muted?: boolean }) {
@@ -161,29 +258,43 @@ function ThirdPlacePicker({
       <CardContent className="space-y-3">
         {thirdSlots.map((slot, index) => {
           const selected = state.thirdSelections[slot.id] || "";
-          const options = slot.groups.map((group) => {
-            const team = state.groupRankings[group][2];
-            return {
-              value: group,
-              label: `${group}組3位 ${team.name}`,
-              disabled: usedGroups.has(group) && selected !== group
-            };
-          });
-
           return (
             <div key={slot.id} className="rounded-lg border border-border bg-background p-3">
-              <div className="mb-2 text-xs font-bold text-muted-foreground">3位枠 {index + 1}: {slot.groups.join("/")}組3位</div>
-              <Select
-                value={selected}
-                placeholder="選択してください"
-                options={options}
-                onValueChange={(value) =>
-                  setState((current) => ({
-                    ...current,
-                    thirdSelections: { ...current.thirdSelections, [slot.id]: value as GroupId }
-                  }))
-                }
-              />
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="text-xs font-bold text-muted-foreground">3位枠 {index + 1}</div>
+                <div className="text-[11px] font-bold text-muted-foreground">{slot.groups.join("/")}組から選択</div>
+              </div>
+              <div className="grid gap-2">
+                {slot.groups.map((group) => {
+                  const team = state.groupRankings[group][2];
+                  const isSelected = selected === group;
+                  const isUsed = usedGroups.has(group) && !isSelected;
+
+                  return (
+                    <button
+                      key={group}
+                      type="button"
+                      disabled={isUsed}
+                      onClick={() =>
+                        setState((current) => ({
+                          ...current,
+                          thirdSelections: { ...current.thirdSelections, [slot.id]: group }
+                        }))
+                      }
+                      className={cn(
+                        "flex min-h-14 items-center gap-3 rounded-lg border px-3 py-2 text-left transition active:scale-[0.99] disabled:opacity-35",
+                        isSelected ? "border-gold bg-gold/15 shadow-sm" : "border-border bg-card hover:bg-muted"
+                      )}
+                    >
+                      <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-black", isSelected ? "bg-gold text-slate-950" : "bg-muted text-muted-foreground")}>
+                        {group}
+                      </span>
+                      <TeamPill team={team} />
+                      {isUsed && <span className="ml-auto shrink-0 text-[11px] font-bold text-muted-foreground">選択済み</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           );
         })}
@@ -208,33 +319,105 @@ function MatchCard({
   const left = resolveSeed(match.left, state, matchesByRound);
   const right = resolveSeed(match.right, state, matchesByRound);
   const winner = state.winners[match.id];
+  const locked = !left || !right;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn("overflow-hidden transition", winner && "animate-advance border-gold/70")}>
       <div className="flex items-center justify-between bg-muted px-3 py-2">
         <span className="text-xs font-black text-muted-foreground">{match.label}</span>
         <span className="text-xs font-semibold text-muted-foreground">試合 {index + 1}</span>
       </div>
-      <CardContent className="space-y-3 p-3">
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-          <div className={cn("min-w-0 rounded-lg border p-3", winner === "left" ? "border-gold bg-gold/15" : "border-border")}>
+      <CardContent className="space-y-2 p-3">
+        <button
+          type="button"
+          disabled={!left || locked}
+          onClick={() => onWinner(match.id, "left")}
+          className={cn(
+            "w-full rounded-lg border p-3 text-left transition active:scale-[0.99] disabled:opacity-45",
+            winner === "left" ? "border-gold bg-gold/15 shadow-sm" : "border-border bg-background hover:bg-muted"
+          )}
+        >
             <TeamPill team={left} muted={winner === "right"} />
-          </div>
-          <span className="text-xs font-black text-muted-foreground">vs</span>
-          <div className={cn("min-w-0 rounded-lg border p-3", winner === "right" ? "border-gold bg-gold/15" : "border-border")}>
+        </button>
+        <div className="text-center text-[10px] font-black uppercase text-muted-foreground">vs</div>
+        <button
+          type="button"
+          disabled={!right || locked}
+          onClick={() => onWinner(match.id, "right")}
+          className={cn(
+            "w-full rounded-lg border p-3 text-left transition active:scale-[0.99] disabled:opacity-45",
+            winner === "right" ? "border-gold bg-gold/15 shadow-sm" : "border-border bg-background hover:bg-muted"
+          )}
+        >
             <TeamPill team={right} muted={winner === "left"} />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant={winner === "left" ? "gold" : "outline"} disabled={!left} onClick={() => onWinner(match.id, "left")}>
-            左チーム勝利
-          </Button>
-          <Button variant={winner === "right" ? "gold" : "outline"} disabled={!right} onClick={() => onWinner(match.id, "right")}>
-            右チーム勝利
-          </Button>
-        </div>
+        </button>
       </CardContent>
     </Card>
+  );
+}
+
+function PlacementMatchCard({
+  left,
+  right,
+  winner,
+  onWinner
+}: {
+  left: Team | null;
+  right: Team | null;
+  winner: "left" | "right" | "";
+  onWinner: (side: "left" | "right") => void;
+}) {
+  const locked = !left || !right;
+
+  return (
+    <Card className={cn("overflow-hidden transition", winner && "animate-advance border-gold/70")}>
+      <div className="flex items-center justify-between bg-muted px-3 py-2">
+        <span className="text-xs font-black text-muted-foreground">3位決定戦</span>
+        <span className="text-xs font-semibold text-muted-foreground">3位/4位</span>
+      </div>
+      <CardContent className="space-y-2 p-3">
+        <button
+          type="button"
+          disabled={!left || locked}
+          onClick={() => onWinner("left")}
+          className={cn(
+            "w-full rounded-lg border p-3 text-left transition active:scale-[0.99] disabled:opacity-45",
+            winner === "left" ? "border-gold bg-gold/15 shadow-sm" : "border-border bg-background hover:bg-muted"
+          )}
+        >
+          <TeamPill team={left} muted={winner === "right"} />
+        </button>
+        <div className="text-center text-[10px] font-black uppercase text-muted-foreground">vs</div>
+        <button
+          type="button"
+          disabled={!right || locked}
+          onClick={() => onWinner("right")}
+          className={cn(
+            "w-full rounded-lg border p-3 text-left transition active:scale-[0.99] disabled:opacity-45",
+            winner === "right" ? "border-gold bg-gold/15 shadow-sm" : "border-border bg-background hover:bg-muted"
+          )}
+        >
+          <TeamPill team={right} muted={winner === "left"} />
+        </button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TournamentEntry({
+  title,
+  children
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+      <div className="rounded-lg bg-primary px-4 py-3 text-primary-foreground">
+        <h3 className="text-base font-black">{title}</h3>
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -243,7 +426,6 @@ export default function Home() {
   const [step, setStep] = useState<"home" | "groups" | "tournament">("home");
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState("");
-  const resultRef = useRef<HTMLDivElement>(null);
 
   const matchesByRound = useMemo(
     () =>
@@ -257,7 +439,8 @@ export default function Home() {
     []
   );
 
-  const champion = resolveSeed({ kind: "winner", round: "final", matchIndex: 0 }, state, matchesByRound);
+  const finalResults = getFinalResults(state, matchesByRound);
+  const champion = finalResults.champion;
 
   useEffect(() => {
     const shared = readPredictionFromUrl();
@@ -271,6 +454,10 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [step]);
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -288,24 +475,7 @@ export default function Home() {
     }));
   };
 
-  const save = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    setMessage("保存しました");
-  };
-
-  const load = () => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      setMessage("保存データがありません");
-      return;
-    }
-    setState(JSON.parse(raw) as PredictionState);
-    setStep("tournament");
-    setMessage("保存データを読み込みました");
-  };
-
   const reset = () => {
-    localStorage.removeItem(STORAGE_KEY);
     setState(createInitialPrediction());
     setStep("home");
     setMessage("リセットしました");
@@ -318,19 +488,26 @@ export default function Home() {
   };
 
   const exportPng = async () => {
-    if (!resultRef.current) return;
-    const dataUrl = await toPng(resultRef.current, { cacheBust: true, pixelRatio: 2 });
+    const dataUrl = drawBracketPng(state, matchesByRound);
+    if (!dataUrl) return;
     const link = document.createElement("a");
     link.download = "wc2026-prediction.png";
     link.href = dataUrl;
     link.click();
-    setMessage("PNG画像を出力しました");
+    setMessage("画像を保存しました");
   };
 
   const pickWinner = (matchId: string, side: "left" | "right") => {
     setState((current) => ({
       ...current,
       winners: { ...current.winners, [matchId]: side }
+    }));
+  };
+
+  const pickThirdPlace = (side: "left" | "right") => {
+    setState((current) => ({
+      ...current,
+      winners: { ...current.winners, "third-place": side }
     }));
   };
 
@@ -345,9 +522,6 @@ export default function Home() {
           <div className="flex gap-2">
             <Button size="icon" variant="outline" aria-label="ダークモード切替" onClick={() => setDark((value) => !value)}>
               {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </Button>
-            <Button size="icon" variant="outline" aria-label="保存" onClick={save}>
-              <Save className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -365,10 +539,6 @@ export default function Home() {
             <Button className="h-14" onClick={() => setStep("groups")}>
               <Play className="h-4 w-4" />
               予想開始
-            </Button>
-            <Button variant="outline" onClick={load}>
-              <Upload className="h-4 w-4" />
-              保存データ読込
             </Button>
             <Button variant="secondary" onClick={reset}>
               <RotateCcw className="h-4 w-4" />
@@ -404,18 +574,15 @@ export default function Home() {
         <section className="space-y-5">
           <div>
             <h2 className="text-2xl font-black">STEP2 決勝トーナメント</h2>
-            <p className="text-sm text-muted-foreground">縦スクロールで各ラウンドの勝者を選択します。</p>
+            <p className="text-sm text-muted-foreground">ベスト32をすべて選んでから、ベスト16以降へ進みます。</p>
           </div>
 
           <ThirdPlacePicker state={state} setState={setState} />
 
-          <div ref={resultRef} className="space-y-5 rounded-xl bg-background p-2">
-            {(Object.keys(roundLabels) as RoundId[]).map((round) => (
-              <div key={round} className="space-y-3">
-                <div className="sticky top-[78px] z-10 rounded-lg bg-primary px-4 py-3 text-primary-foreground shadow-app">
-                  <h3 className="text-lg font-black">{roundLabels[round]}</h3>
-                </div>
-                {matchesByRound[round].map((match, index) => (
+          <div className="space-y-5 rounded-xl bg-background p-2">
+            <TournamentEntry title="ベスト32">
+              <div className="grid gap-3">
+                {matchesByRound.r32.map((match, index) => (
                   <MatchCard
                     key={match.id}
                     match={match}
@@ -426,7 +593,43 @@ export default function Home() {
                   />
                 ))}
               </div>
+            </TournamentEntry>
+
+            {(["r16", "qf", "sf"] as RoundId[]).map((round) => (
+              <TournamentEntry key={round} title={roundLabels[round]}>
+                <div className="grid gap-3">
+                  {matchesByRound[round].map((match, index) => (
+                    <MatchCard
+                      key={match.id}
+                      match={match}
+                      index={index}
+                      state={state}
+                      matchesByRound={matchesByRound}
+                      onWinner={pickWinner}
+                    />
+                  ))}
+                </div>
+              </TournamentEntry>
             ))}
+
+            <TournamentEntry title="3位決定戦">
+              <PlacementMatchCard
+                left={finalResults.semiLosers[0]}
+                right={finalResults.semiLosers[1]}
+                winner={state.winners["third-place"] || ""}
+                onWinner={pickThirdPlace}
+              />
+            </TournamentEntry>
+
+            <TournamentEntry title={roundLabels.final}>
+              <MatchCard
+                match={matchesByRound.final[0]}
+                index={0}
+                state={state}
+                matchesByRound={matchesByRound}
+                onWinner={pickWinner}
+              />
+            </TournamentEntry>
 
             <Card className="border-gold bg-gold/15">
               <CardContent className="space-y-4 p-5 text-center">
@@ -436,16 +639,6 @@ export default function Home() {
                   <div className="mt-2 flex justify-center text-3xl font-black">
                     <TeamPill team={champion} />
                   </div>
-                </div>
-                <div className="grid gap-3 text-left">
-                  <label className="space-y-1">
-                    <span className="text-sm font-bold">MVP予想</span>
-                    <Input value={state.mvp} onChange={(event) => setState((current) => ({ ...current, mvp: event.target.value }))} placeholder="選手名を入力" />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-sm font-bold">得点王予想</span>
-                    <Input value={state.topScorer} onChange={(event) => setState((current) => ({ ...current, topScorer: event.target.value }))} placeholder="選手名を入力" />
-                  </label>
                 </div>
               </CardContent>
             </Card>
@@ -458,7 +651,7 @@ export default function Home() {
             </Button>
             <Button variant="gold" onClick={exportPng}>
               <Download className="h-4 w-4" />
-              PNG画像出力
+              画像保存
             </Button>
           </div>
         </section>

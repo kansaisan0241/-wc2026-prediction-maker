@@ -1,7 +1,5 @@
 import type { PredictionState } from "@/lib/types";
 
-export const STORAGE_KEY = "wc2026-prediction-maker";
-
 export function readPredictionFromUrl(): PredictionState | null {
   if (typeof window === "undefined") return null;
   const value = new URLSearchParams(window.location.search).get("p");

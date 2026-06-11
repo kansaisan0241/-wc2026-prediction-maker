@@ -72,6 +72,25 @@ select {
   object-fit: cover;
 }
 
+.animate-advance {
+  animation: advance-pop 420ms ease-out;
+}
+
+@keyframes advance-pop {
+  0% {
+    transform: scale(0.985);
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.45);
+  }
+  65% {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 6px rgba(212, 175, 55, 0.12);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(212, 175, 55, 0);
+  }
+}
+
 @media (display-mode: standalone) {
   body {
     user-select: none;

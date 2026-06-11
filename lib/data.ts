@@ -84,9 +84,7 @@ export function createInitialPrediction(): PredictionState {
   return {
     groupRankings: createInitialRankings(),
     thirdSelections: Object.fromEntries(thirdSlots.map((slot) => [slot.id, ""])),
-    winners: {},
-    mvp: "",
-    topScorer: ""
+    winners: {}
   };
 }
 
