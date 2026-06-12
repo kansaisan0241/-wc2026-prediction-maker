@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import {
@@ -426,6 +427,7 @@ export default function Home() {
   const [step, setStep] = useState<"home" | "groups" | "tournament">("home");
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState("");
+  const [imagePreview, setImagePreview] = useState("");
 
   const matchesByRound = useMemo(
     () =>
@@ -490,11 +492,8 @@ export default function Home() {
   const exportPng = async () => {
     const dataUrl = drawBracketPng(state, matchesByRound);
     if (!dataUrl) return;
-    const link = document.createElement("a");
-    link.download = "wc2026-prediction.png";
-    link.href = dataUrl;
-    link.click();
-    setMessage("画像を保存しました");
+    setImagePreview(dataUrl);
+    setMessage("画像を表示しました。長押しで保存できます");
   };
 
   const pickWinner = (matchId: string, side: "left" | "right") => {
@@ -654,6 +653,27 @@ export default function Home() {
               画像保存
             </Button>
           </div>
+
+          {imagePreview && (
+            <div className="fixed inset-0 z-50 flex items-end bg-black/70 p-4 sm:items-center">
+              <div className="mx-auto w-full max-w-md rounded-xl bg-background p-4 shadow-xl">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-black">画像保存</div>
+                    <div className="text-xs font-bold text-muted-foreground">画像を長押しして保存してください</div>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => setImagePreview("")}>
+                    閉じる
+                  </Button>
+                </div>
+                <img
+                  src={imagePreview}
+                  alt="予想結果画像"
+                  className="block w-full rounded-lg border border-border bg-white"
+                />
+              </div>
+            </div>
+          )}
         </section>
       )}
     </main>
